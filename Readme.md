@@ -6,7 +6,7 @@ Generate semantic-enhanced noise pairs for text-to-video diffusion training.
 
 ### 1. Generate Weak Pairs
 ```bash
-python Work/make_weak_pairs.py \
+python Work/make_weak_pairs.py
 ```
 
 Output: `weak_pairs/*.pt` files
@@ -26,7 +26,7 @@ def batch_ddim_sampling(..., x_T=None, **kwargs):  # Add x_T=None
 
 **Run**:
 ```bash
-python Work/inference_from_weak_pairs.py \
+python Work/inference_from_weak_pairs.py
 ```
 
 Output: `x_T/` vs `x_T_target/` videos
