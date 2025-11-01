@@ -9,7 +9,37 @@ from pytorch_lightning import seed_everything
 
 from utils.utils import instantiate_from_config
 from scripts.evaluation.funcs import load_model_checkpoint, load_prompts
+try:
+    import xformers.ops
 
+    def safe_memory_efficient_attention(q, k, v, attn_bias=None, op=None):
+        """
+        Fallback attention: pure PyTorch, no custom CUDA kernel.
+        q,k,v: [B*h, N, d]
+        return: [B*h, N, d]
+        """
+        # q, k, v come in already batched per-head in xformers style
+        # we'll just do scaled dot-product attention manually.
+        d = q.shape[-1]
+        scale = (d ** -0.5)
+
+        # [B*h, N, N]
+        attn = torch.bmm(q * scale, k.transpose(1, 2))
+
+        # no attn_bias / mask for now; if their code passes mask it should've
+        # been applied before calling xformers in this repo
+        attn = torch.softmax(attn, dim=-1)
+
+        # [B*h, N, d]
+        out = torch.bmm(attn, v)
+        return out
+
+    # patch it
+    xformers.ops.memory_efficient_attention = safe_memory_efficient_attention
+    print("[Patch] Using safe_memory_efficient_attention (xformers disabled).")
+except Exception as e:
+    print("[Patch] Could not patch xformers, continuing without:", e)
+# ================================================================
 
 def read_prompts(path: str) -> List[str]:
     try:
@@ -28,7 +58,7 @@ def build_weak_pairs(
     lambda_sem: float = 0.5,
     t_mode: str = "high",
     t_fixed: int = None,
-    batch_size: int = 2,
+    batch_size: int = 10,
     height: int = 512,
     width: int = 512,
     frames: int = -1,
@@ -118,7 +148,7 @@ def get_parser():
     parser.add_argument("--seed", type=int, default=20230211)
     parser.add_argument("--config", type=str, default="configs/inference_t2v_512_v2.0.yaml")
     parser.add_argument("--ckpt_path", type=str, default="checkpoints/base_512_v2/model.ckpt")
-    parser.add_argument("--prompt_file", type=str, default="Work/prompts/prompts_bank.txt")
+    parser.add_argument("--prompt_file", type=str, default="Work/prompts/initial.txt")
     parser.add_argument("--outdir", type=str, default="Work/outputs/weak_pairs")
     parser.add_argument("--height", type=int, default=512)
     parser.add_argument("--width", type=int, default=512)
@@ -126,7 +156,7 @@ def get_parser():
     parser.add_argument("--lambda_sem", type=float, default=0.5)
     parser.add_argument("--t_mode", type=str, default="high", choices=["high", "uniform", "fixed"])
     parser.add_argument("--t_fixed", type=int, default=None)
-    parser.add_argument("--bs", type=int, default=2)
+    parser.add_argument("--bs", type=int, default=4)
     parser.add_argument("--save_intermediate", action="store_true",
                         help="Save eps_cond and eps_uncond for debugging")
     return parser
